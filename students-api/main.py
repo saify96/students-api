@@ -2,8 +2,10 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.sql import select
 from sqlalchemy.sql.expression import and_
+
 from db import engine
 from db import students as students_table
 from models import PatchStudent, PostStudent, PutStudent, StudentModel
@@ -20,14 +22,17 @@ def get_students(
         students = conn.execute(select(students_table)).fetchall()
         if gender and department:
             students = conn.execute(select(students_table).where(and_(
-                students_table.c.gender == gender,
-                students_table.c.department == department))).fetchall()
+                func.lower(students_table.c.gender) == gender.lower(),
+                func.lower(students_table.c.department) == department.lower())
+            )).fetchall()
         if gender and not department:
             students = conn.execute(select(students_table).where(
-                students_table.c.gender == gender)) .fetchall()
+                func.lower(students_table.c.gender) == gender.lower()
+            )) .fetchall()
         if department and not gender:
             students = conn.execute(select(students_table).where(
-                students_table.c.department == department)).fetchall()
+                func.lower(students_table.c.department) == department.lower()
+            )).fetchall()
     if not students:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
