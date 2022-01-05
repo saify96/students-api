@@ -1,0 +1,47 @@
+version: "2.4"
+
+services:
+  students:
+    image: students-image
+    build:
+      context: .
+    container_name: students-base
+    volumes:
+      - ${PWD}:/app
+    environment:
+      - VIRTUAL_HOST=students-api.docker
+        # Postgres connectivity
+      - PGHOST=students-postgres
+      - PGPORT=5432
+      - PGDATABASE=students
+      - PGUSER=students
+      - PGPASSWORD=password
+    command: ["echo", "base build done"]
+
+  students-api:
+    extends: students
+    container_name: students-api
+    depends_on:
+      - students-postgres
+    command:
+      [
+        "uvicorn",
+        "--reload",
+        "--workers",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "80",
+        "students-api.main:app",
+      ]
+  students-postgres:
+    container_name: students-postgres
+    image: postgres:12.5
+    environment:
+      VIRTUAL_HOST: students-postgres.docker
+      POSTGRES_DB: students
+      POSTGRES_USER: students
+      POSTGRES_PASSWORD: password
+    ports:
+      - "55555:5432"
