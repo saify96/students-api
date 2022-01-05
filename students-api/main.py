@@ -1,87 +1,88 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, status
-from sqlalchemy import func
-from sqlalchemy.sql import select
-from sqlalchemy.sql.expression import and_
-
 from db import engine
-from db import students as students_table
+from db import students
+from fastapi import FastAPI, HTTPException, status
 from models import PatchStudent, PostStudent, PutStudent, StudentModel
 from session import JSONResponse
 
 app = FastAPI()
 
 
-@app.get('/students')
+@app.get('/students', response_model=StudentModel)
 def get_students(
         department: Optional[str] = None,
         gender: Optional[str] = None) -> JSONResponse:
+    sel = None
+    if gender and department:
+        sel = students.select().where(students.c.gender == gender)\
+            .where(students.c.department == department)
+    elif gender and not department:
+        sel = students.select().where(students.c.gender == gender)
+    elif department and not gender:
+        sel = students.select().where(students.c.department == department)
+    else:
+        sel = students.select()
+
     with engine.connect() as conn:
-        students = conn.execute(select(students_table)).fetchall()
-        if gender and department:
-            students = conn.execute(select(students_table).where(and_(
-                func.lower(students_table.c.gender) == gender.lower(),
-                func.lower(students_table.c.department) == department.lower())
-            )).fetchall()
-        if gender and not department:
-            students = conn.execute(select(students_table).where(
-                func.lower(students_table.c.gender) == gender.lower()
-            )) .fetchall()
-        if department and not gender:
-            students = conn.execute(select(students_table).where(
-                func.lower(students_table.c.department) == department.lower()
-            )).fetchall()
-    if not students:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail='There are no students'
+        students_data = conn.execute(sel).fetchall()
+
+    if not students_data:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={'data': []}
+
         )
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content=(StudentModel(**student._asdict()) for student in students)
+        content={'data': (StudentModel(**student._asdict())
+                 for student in students_data)}
     )
 
 
-@app.get('/students/{student_id}')
+@app.get('/students/{student_id}', response_model=StudentModel)
 def get_students_by_id(student_id: UUID) -> JSONResponse:
     with engine.connect() as conn:
-        student = conn.execute(students_table.select().where(
-            students_table.c.id == student_id)).first()
-    if not student:
+        student_data = conn.execute(students.select().where(
+            students.c.id == student_id)).first()
+
+    if not student_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f'Student with id: {student_id} dose not exist'
         )
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content={'data': StudentModel(**student._asdict())}
+        content={'data': StudentModel(**student_data._asdict())}
     )
 
 
-@app.post('/students')
+@app.post('/students', response_model=StudentModel)
 def add_student(student: PostStudent) -> JSONResponse:
     try:
         with engine.begin() as conn:
-            new_student = conn.execute(students_table.insert().values(
-                **student.dict()).returning(students_table))
+            new_student = conn.execute(students.insert().values(
+                **student.dict()).returning(students))
+
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail='Bad data')
-    return JSONResponse(status_code=status.HTTP_201_CREATED,
-                        content=StudentModel(**new_student.fetchone()))
+
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content={'data': StudentModel(**new_student.fetchone())}
+    )
 
 
 @app.delete("/students/{student_id}")
 def delete_student(student_id: UUID) -> JSONResponse:
-    try:
-        with engine.begin() as conn:
-            conn.execute(students_table.delete().where(
-                students_table.c.id == student_id
-            ))
-    except Exception:
+    with engine.begin() as conn:
+        deleted_student = conn.execute(students.delete().where(
+            students.c.id == student_id
+        )).rowcount
+    if not deleted_student:
         raise HTTPException(
             status_code=404,
             detail=f'Student with id: ({student_id}) dose not exist'
@@ -90,36 +91,41 @@ def delete_student(student_id: UUID) -> JSONResponse:
                         content=f'Student with id: {student_id} deleted')
 
 
-@app.put("/students/{student_id}")
+@app.put("/students/{student_id}", response_model=StudentModel)
 def update_student_info(student_id: UUID, student: PutStudent) -> JSONResponse:
-    try:
-        with engine.begin() as conn:
-            updated_student = conn.execute(students_table.update()
-                                           .where(students_table.c.id
-                                                  == student_id)
-                                           .values(
-                **student.dict()).returning(students_table))
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Bad data')
+    # delete the origen
+    with engine.begin() as conn:
+        deleted_student = conn.execute(students.delete().where(
+            students.c.id == student_id
+        )).rowcount
+
+        new_student = conn.execute(
+            students.insert().values(id=student_id,
+                                     ** student.dict()).returning(students))
+
+        if deleted_student:
+            return JSONResponse(status_code=status.HTTP_204_NO_CONTENT)
+
     return JSONResponse(status_code=status.HTTP_201_CREATED,
-                        content=StudentModel(**updated_student.fetchone()))
+                        content={'data': StudentModel(**new_student.first())})
 
 
-@app.patch("/students/{student_id}")
-def update_student_sepcifec_info(student_id: UUID,
-                                 student: PatchStudent) -> JSONResponse:
-    try:
-        with engine.begin() as conn:
-            updated_student = conn.execute(students_table.update()
-                                           .where(students_table.c.id
-                                                  == student_id)
-                                           .values(
-                **student.dict(exclude_none=True)).returning(students_table))
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Bad data')
+@app.patch("/students/{student_id}", response_model=StudentModel)
+def patch_student(student_id: UUID,
+                  student: PatchStudent) -> JSONResponse:
+
+    with engine.begin() as conn:
+        updated_student = conn.execute(
+            students.update()
+            .where(students.c.id == student_id).values(
+                **student.dict(exclude_none=True))
+            .returning(students))
+
+        if not updated_student.rowcount:
+            raise HTTPException(
+                status_code=404,
+                detail=f'Student with id: ({student_id}) dose not exist'
+            )
+
     return JSONResponse(status_code=status.HTTP_201_CREATED,
                         content=StudentModel(**updated_student.fetchone()))

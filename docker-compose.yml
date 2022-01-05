@@ -2,7 +2,7 @@ version: "2.4"
 
 services:
   students:
-    image: students-image
+    image: students-api-image
     build:
       context: .
     container_name: students-base
@@ -44,4 +44,4 @@ services:
       POSTGRES_USER: students
       POSTGRES_PASSWORD: password
     ports:
-      - "55555:5432"
+      - "54321:5432"

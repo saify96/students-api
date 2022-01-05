@@ -1,20 +1,20 @@
 from datetime import date, datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic.fields import Field
 
 
 class StudentModel(BaseModel):
-    id: Optional[UUID] = uuid4()
+    id: UUID
     name: str
     department: str
     state: str
     gender: str
     date_of_birth: date
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
 
 
 class PostStudent(BaseModel):

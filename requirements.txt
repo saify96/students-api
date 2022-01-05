@@ -8,6 +8,7 @@ greenlet==1.1.2
 h11==0.12.0
 idna==3.3
 mccabe==0.6.1
+psycopg2==2.9.2
 pycodestyle==2.8.0
 pydantic==1.9.0
 pyflakes==2.4.0
@@ -17,4 +18,3 @@ starlette==0.16.0
 toml==0.10.2
 typing_extensions==4.0.1
 uvicorn==0.16.0
-psycopg2==2.9.2
